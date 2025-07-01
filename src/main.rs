@@ -2,6 +2,7 @@ use std::env;
 use std::process;
 
 use my_compressor::Config;
+pub use my_compressor::huffman_tree;
 
 
 fn main() {

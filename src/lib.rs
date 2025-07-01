@@ -1,6 +1,9 @@
 use std::error::Error;
-//use std::fs;
 use std::path::Path;
+
+pub mod huffman_coding;
+pub mod huffman_tree;
+
 
 pub struct Config {
     pub archive_name: String,
@@ -37,6 +40,17 @@ impl Config {
     }
 }
 
+
 pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
+    let freq_map = huffman_coding::parser(&config.files)?;
+    //huffman_coding::print_map(&freq_map);
+    while freq_map.len() > 1 {
+        let newnode = huffman_tree::create_node_of_2_mins(freq_map);
+    }
     Ok(())
 }
+
+
+
+
+

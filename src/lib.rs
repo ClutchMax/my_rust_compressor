@@ -42,11 +42,30 @@ impl Config {
 
 
 pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
-    let freq_map = huffman_coding::parser(&config.files)?;
-    //huffman_coding::print_map(&freq_map);
-    while freq_map.len() > 1 {
-        let newnode = huffman_tree::create_node_of_2_mins(freq_map);
+
+    // Creates a frequency map with the parser function, then turns it into a vector of tuple for the algorithm
+    let freq_vec: Vec<(char, u16)> = huffman_coding::parser(&config.files)?
+    .iter()
+    .map(|(&c, &f)| (c, f))
+    .collect();
+
+    if freq_vec.is_empty() {
+        return Err("Trying to compress empty files.".into());
     }
+
+    // Creates the huffman tree, then the code map and then the canonical code map
+    let tree = huffman_tree::create_tree(freq_vec);
+    huffman_tree::print_tree(&tree, 0);
+
+    let code_map = huffman_tree::build_code_map(&tree);
+    huffman_tree::print_code_map(&code_map);
+
+    let canonical_code_map = huffman_tree::build_canonical_code_map(&code_map);
+
+    
+
+
+
     Ok(())
 }
 

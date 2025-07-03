@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 
 
-pub fn parser(content: &Vec<String>) -> Result<HashMap<char, u8>, std::io::Error> {
+pub fn parser(content: &Vec<String>) -> Result<HashMap<char, u16>, std::io::Error> {
     let mut frequency_map = HashMap::new();
     for file in content {
         let file_content = fs::read_to_string(Path::new(file))?; 
@@ -15,8 +15,10 @@ pub fn parser(content: &Vec<String>) -> Result<HashMap<char, u8>, std::io::Error
         }
     }
     
-   Ok(frequency_map)
+    print_map(&frequency_map);
+    Ok(frequency_map)
 }
+
 
 
 

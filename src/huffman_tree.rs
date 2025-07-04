@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 pub enum Tree {
@@ -62,9 +62,30 @@ fn build_code_map_rec(tree: &Tree, path: Vec<bool>, map: &mut HashMap<char, Vec<
 
 
 
-pub fn build_canonical_code_map(code_map: &HashMap<char, Vec<bool>>) -> HashMap<char, Vec<bool>> {
+pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> Vec<(char, usize)> {
+    let mut canonical_vec: Vec<(char, usize)> = Vec::new();
+    for (c, vec) in code_map{
+        canonical_vec.push((c, vec.len()));
+    }
 
-    todo!()
+    // Compares by frequency (second elt of tupe), and if equal, compare by char to order alphabetically
+    canonical_vec.sort_by(|a,b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
+    let mut canonical_map = HashMap::new();
+    canonical_map.insert(canonical_vec[0].0, "0".to_string().repeat(canonical_vec[0].1));
+    let mut last_length = &canonical_vec[0].1;
+
+    for i in 1..canonical_vec.len()  {
+        if canonical_vec[i].1 == *last_length {
+            
+        } else if canonical_vec[i].1 > *last_length {
+            
+        } else {
+            panic!("Error in building canonical map : vector not sorted !");
+        }
+    }
+
+    canonical_vec
 }
 
 

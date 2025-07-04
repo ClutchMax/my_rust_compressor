@@ -60,8 +60,8 @@ pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
     let code_map = huffman_tree::build_code_map(&tree);
     huffman_tree::print_code_map(&code_map);
 
-    let canonical_code_map = huffman_tree::build_canonical_code_map(&code_map);
-
+    let canonical_code_map = huffman_tree::build_canonical_code(code_map);
+    println!("{:?}", canonical_code_map);
     
 
 

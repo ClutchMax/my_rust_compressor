@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 #[derive(Debug)]
 pub enum Tree {
@@ -15,11 +15,15 @@ impl Tree {
     }
 }
 
+// Takes ownership of two trees and return a parent node of them, which holds ownership of the two children
 pub fn create_node_of_2_mins (left: Tree, right: Tree) -> Tree {
     let sum_of_freq = left.extract_val() + right.extract_val();
     Tree::Branch(Box::new(left), sum_of_freq, Box::new(right))
 }
 
+
+// Builds the huffman tree by popping the two least frequent characters from the vector 'freq_vec' and adds them to the main tree by calling create_node_of_2_mins
+// Then adds the resulting node to the vector. Returns the top root which owns all the tree data
 pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
     let mut nodes : Vec<Tree> = freq_vec.into_iter().map(|(c, f)| Tree::Leaf(c, f)).collect(); // Creates a vector of Tree
     dbg!(&nodes);
@@ -36,6 +40,8 @@ pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
 }
 
 
+
+// Takes the root node of a tree and builds a hashmap giving the binary path in the tree to reach each character
 pub fn build_code_map(tree: &Tree) -> HashMap<char, Vec<bool>> {
     let mut code_map = HashMap::new();
     build_code_map_rec(tree, Vec::new(), &mut code_map);
@@ -43,6 +49,8 @@ pub fn build_code_map(tree: &Tree) -> HashMap<char, Vec<bool>> {
 }
 
 
+// Logical function for 'build_code_map' that recursively runs the tree, writing the path to each character in a map
+// (going left = 0 = false, right = 1 = true).
 fn build_code_map_rec(tree: &Tree, path: Vec<bool>, map: &mut HashMap<char, Vec<bool>>) {
     match tree {
         Tree::Leaf(ch, _) => {
@@ -61,8 +69,9 @@ fn build_code_map_rec(tree: &Tree, path: Vec<bool>, map: &mut HashMap<char, Vec<
 }
 
 
-
-pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> Vec<(char, usize)> {
+// Takes a map containing each character as key and their binary path in the huffman tree as value, and builds
+// a canonical vector containing TODO 
+pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> HashMap<char, String>  {
     let mut canonical_vec: Vec<(char, usize)> = Vec::new();
     for (c, vec) in code_map{
         canonical_vec.push((c, vec.len()));
@@ -72,20 +81,27 @@ pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> Vec<(char, us
     canonical_vec.sort_by(|a,b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
 
     let mut canonical_map = HashMap::new();
-    canonical_map.insert(canonical_vec[0].0, "0".to_string().repeat(canonical_vec[0].1));
-    let mut last_length = &canonical_vec[0].1;
+    let mut code: u32 = 0;
+    let mut prev_len = 0;
 
-    for i in 1..canonical_vec.len()  {
-        if canonical_vec[i].1 == *last_length {
-            
-        } else if canonical_vec[i].1 > *last_length {
-            
-        } else {
-            panic!("Error in building canonical map : vector not sorted !");
+    for &(ch, bit_len) in &canonical_vec {
+        // Shift left if bit_len increased (append zeros)
+        if bit_len > prev_len {
+            code <<= bit_len - prev_len;
+        } else if bit_len < prev_len {
+            panic!("Canonical vector not sorted correctly by bit length!");
         }
+
+        // Format code with leading zeroes
+        let code_str = format!("{:0bit_len$b}", code, bit_len = bit_len);
+        canonical_map.insert(ch, code_str);
+
+        // Increment code for the next symbol
+        code += 1;
+        prev_len = bit_len;
     }
 
-    canonical_vec
+    canonical_map
 }
 
 
@@ -125,3 +141,5 @@ pub fn print_code_map(code_map: &HashMap<char, Vec<bool>>) {
         println!("'{}': {}", ch, bits);
     }       
 }
+
+

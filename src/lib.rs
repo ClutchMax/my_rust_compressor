@@ -1,8 +1,10 @@
 use std::error::Error;
 use std::path::Path;
+use std::fs;
 
-pub mod huffman_coding;
+
 pub mod huffman_tree;
+pub mod encoder;
 
 
 pub struct Config {
@@ -13,7 +15,7 @@ pub struct Config {
 
 
 impl Config {
-    pub fn build(mut args: Vec<String>) -> Result<Config, String> {
+    pub fn build(mut args: Vec<String>) -> Result<Config, Box<dyn Error>> {
         if args.len() <= 2 {
             return Err("Not enough arguments.".into());
         }
@@ -29,10 +31,10 @@ impl Config {
         // Checks if provided fils in arguments exist
         for file in args.clone() {
             if !Path::new(&file).exists() {
-                return Err(format!("File {} doesn't exist.", file));
-            }
+                return Err(format!("File {} doesn't exist.", file).into());
+            }            
         }
-
+        
         Ok(Config {
             archive_name,
             files: args,
@@ -43,26 +45,8 @@ impl Config {
 
 pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
 
-    // Creates a frequency map with the parser function, then turns it into a vector of tuple for the algorithm
-    let freq_vec: Vec<(char, u16)> = huffman_coding::parser(&config.files)?
-    .iter()
-    .map(|(&c, &f)| (c, f))
-    .collect();
-
-    if freq_vec.is_empty() {
-        return Err("Trying to compress empty files.".into());
-    }
-
-    // Creates the huffman tree, then the code map and then the canonical code map
-    let tree = huffman_tree::create_tree(freq_vec);
-    huffman_tree::print_tree(&tree, 0);
-
-    let code_map = huffman_tree::build_code_map(&tree);
-    huffman_tree::print_code_map(&code_map);
-
-    let canonical_code_map = huffman_tree::build_canonical_code(code_map);
-    println!("{:?}", canonical_code_map);
-    
+    let encoded_files = encoder::encode_file(&config.files)?;
+    fs::write(config.archive_name, encoded_files)?;
 
 
 

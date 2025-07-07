@@ -1,4 +1,5 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub enum Tree {
@@ -39,6 +40,29 @@ pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
     nodes.pop().expect("Error in building the tree")
 }
 
+
+pub fn parser(content: &String) -> Result<HashMap<char, u16>, std::io::Error> {
+    let mut frequency_map = HashMap::new();
+   
+
+
+    for c in content.chars() {
+        *frequency_map.entry(c).or_insert(0) += 1;
+    }
+    
+    
+    print_map(&frequency_map);
+    Ok(frequency_map)
+}
+
+
+
+
+pub fn print_map<K: Debug, V: Debug>(map: &HashMap<K, V>) {
+    for (key, value) in map {
+        println!("{:?}: {:?}", key, value);
+    }
+}
 
 
 // Takes the root node of a tree and builds a hashmap giving the binary path in the tree to reach each character

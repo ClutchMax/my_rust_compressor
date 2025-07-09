@@ -1,5 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::path::Path;
+use std::error::Error;
+use std::fs::{self, read_to_string};
+
+
+
 
 #[derive(Debug)]
 pub enum Tree {
@@ -16,6 +22,9 @@ impl Tree {
     }
 }
 
+
+
+
 // Takes ownership of two trees and return a parent node of them, which holds ownership of the two children
 pub fn create_node_of_2_mins (left: Tree, right: Tree) -> Tree {
     let sum_of_freq = left.extract_val() + right.extract_val();
@@ -27,13 +36,13 @@ pub fn create_node_of_2_mins (left: Tree, right: Tree) -> Tree {
 // Then adds the resulting node to the vector. Returns the top root which owns all the tree data
 pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
     let mut nodes : Vec<Tree> = freq_vec.into_iter().map(|(c, f)| Tree::Leaf(c, f)).collect(); // Creates a vector of Tree
-    dbg!(&nodes);
 
     while nodes.len() > 1 {
         nodes.sort_by_key(|tree| std::cmp::Reverse(tree.extract_val()));
         let left = nodes.pop().unwrap(); 
         let right = nodes.pop().unwrap();    // can't crash because len >= 2
 
+        println!("Here");
         let newnode = create_node_of_2_mins(left, right);
         nodes.push(newnode);
     }
@@ -51,18 +60,14 @@ pub fn parser(content: &String) -> Result<HashMap<char, u16>, std::io::Error> {
     }
     
     
-    print_map(&frequency_map);
+    //print_map(&frequency_map);
     Ok(frequency_map)
 }
 
 
 
 
-pub fn print_map<K: Debug, V: Debug>(map: &HashMap<K, V>) {
-    for (key, value) in map {
-        println!("{:?}: {:?}", key, value);
-    }
-}
+
 
 
 // Takes the root node of a tree and builds a hashmap giving the binary path in the tree to reach each character
@@ -131,8 +136,106 @@ pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> HashMap<char,
 
 
 
+// --------------- Encoding ----------------
+pub fn merge_string(file_paths: &Vec<String>) -> Result<String, Box<dyn Error>> {
+    let mut content = String::new();
+    for file_path in file_paths {
+        content.push_str(&fs::read_to_string(Path::new(file_path))?); 
+    }
+    Ok(content)
+}
 
 
+pub fn add_huffman_header(map: &HashMap<char, String>, input_length: usize) -> Result<String, Box<dyn Error>> {
+    let mut header = String::new();
+    header.push_str(&format!("{}\n{}\n",map.len(), input_length));
+    for (char, code) in map {
+        header.push_str(&format!("{}:{}\n", char, code));
+    }
+
+    Ok(header)
+} 
+
+// This function reads the file provided and applies all the functions needed to compress it
+// TODO : add impl of separation of files in the archive
+pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+    
+    let file_paths = &config.files;
+    let content = merge_string(file_paths)?.to_ascii_lowercase();   // For now, go to lowercase to gain more space TODO
+    let freq_vec: Vec<(char, u16)> = parser(&content)?
+            .iter()
+            .map(|(&c, &f)| (c, f))
+            .collect();
+
+    
+
+    if freq_vec.is_empty() {
+        return Err("encode_file: Cannot compress enmpy files.".into());
+    }
+
+    // Creates the huffman tree, then the code map and then the canonical code map
+    let tree = create_tree(freq_vec);
+    //print_tree(&tree, 0);
+
+    let code_map = build_code_map(&tree);
+    //print_code_map(&code_map);
+
+    let canonical_code_map= build_canonical_code(code_map);
+    //println!("{:?}", canonical_code_map);
+
+    // Add header
+    let mut encoded_file = add_huffman_header(&canonical_code_map, content.len())?; // TODO : use more optimized structure than string
+
+    for char in content.chars() {
+        encoded_file.push_str(canonical_code_map.get(&char).ok_or("Encode_file: the encoded character isn't in the map.")?);
+    }
+
+    fs::write(&config.archive_name, encoded_file)?;
+    Ok(())
+}
+
+
+// --------- Decoder functions -----------
+// TODO : implement struct so that those functions can be methods
+pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+    let file_paths = &config.files;
+    let mut encoded_text = String::new();
+    for path in file_paths { 
+        encoded_text.push_str(&read_to_string(path)?);
+    }
+
+    let mut lines = encoded_text.lines();
+
+    // Read and parse map size
+    let char_map_size: usize = lines
+        .next()
+        .ok_or("Missing character map size line")?
+        .trim()
+        .parse()?;
+
+    // Read and parse text length (even if you ignore it for now)
+    let _text_length: usize = lines
+        .next()
+        .ok_or("Missing text length line")?
+        .trim()
+        .parse()?;
+
+    let mut canonical_map = HashMap::new();
+
+    for _ in 0..char_map_size {
+        let line = lines.next().ok_or("Missing line in character map")?;
+        let mut parts = line.splitn(2, ':');
+
+        let ch_str = parts.next().ok_or("Missing character in map entry")?;
+        let code = parts.next().ok_or("Missing code in map entry")?;
+
+        let ch = ch_str.chars().next().ok_or("Empty character in map")?;
+
+        canonical_map.insert(ch, code.to_string());
+    }
+    todo!()
+    //Ok(canonical_map)
+}
 
 
 
@@ -167,3 +270,8 @@ pub fn print_code_map(code_map: &HashMap<char, Vec<bool>>) {
 }
 
 
+pub fn print_map<K: Debug, V: Debug>(map: &HashMap<K, V>) {
+    for (key, value) in map {
+        println!("{:?}: {:?}", key, value);
+    }
+}

@@ -2,14 +2,14 @@ use std::env;
 use std::process;
 
 use my_compressor::Config;
-pub use my_compressor::huffman_tree;
+pub use my_compressor::huffman;
 
 
 fn main() {
     // -----  Config -----
 
     let args: Vec<String> = env::args().collect();
-    
+
     let config = Config::build(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments: {err}");
         process::exit(1);

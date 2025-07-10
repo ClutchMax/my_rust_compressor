@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{write, Debug};
 use std::path::Path;
 use std::error::Error;
 use std::fs::{self, read_to_string};
@@ -42,7 +42,7 @@ pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
         let left = nodes.pop().unwrap(); 
         let right = nodes.pop().unwrap();    // can't crash because len >= 2
 
-        println!("Here");
+        
         let newnode = create_node_of_2_mins(left, right);
         nodes.push(newnode);
     }
@@ -139,18 +139,22 @@ pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> HashMap<char,
 // --------------- Encoding ----------------
 pub fn merge_string(file_paths: &Vec<String>) -> Result<String, Box<dyn Error>> {
     let mut content = String::new();
-    for file_path in file_paths {
-        content.push_str(&fs::read_to_string(Path::new(file_path))?); 
+    for file_path in file_paths {                                
+        content.push_str(&fs::read_to_string(Path::new(file_path))?);                                   // Jump line to separate files
     }
     Ok(content)
 }
 
 
-pub fn add_huffman_header(map: &HashMap<char, String>, input_length: usize) -> Result<String, Box<dyn Error>> {
+pub fn add_huffman_header(map: &HashMap<char, String>, input_length: usize, files: &Vec<String>) -> Result<String, Box<dyn Error>> {
     let mut header = String::new();
-    header.push_str(&format!("{}\n{}\n",map.len(), input_length));
+    header.push_str(&format!("{}\n{}\n{}\n",map.len(), input_length, files.len()));
     for (char, code) in map {
         header.push_str(&format!("{}:{}\n", char, code));
+    }
+    for file in files {
+        header.push_str(file.rsplit_once("/").expect("Failed parsing file names to encode.").1);
+        header.push('\n');
     }
 
     Ok(header)
@@ -161,7 +165,9 @@ pub fn add_huffman_header(map: &HashMap<char, String>, input_length: usize) -> R
 pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     
     let file_paths = &config.files;
-    let content = merge_string(file_paths)?.to_ascii_lowercase();   // For now, go to lowercase to gain more space TODO
+    let content = merge_string(file_paths)?;  
+    
+    
     let freq_vec: Vec<(char, u16)> = parser(&content)?
             .iter()
             .map(|(&c, &f)| (c, f))
@@ -184,7 +190,7 @@ pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
     //println!("{:?}", canonical_code_map);
 
     // Add header
-    let mut encoded_file = add_huffman_header(&canonical_code_map, content.len())?; // TODO : use more optimized structure than string
+    let mut encoded_file = add_huffman_header(&canonical_code_map, content.len(), &config.files)?; // TODO : use more optimized structure than string
 
     for char in content.chars() {
         encoded_file.push_str(canonical_code_map.get(&char).ok_or("Encode_file: the encoded character isn't in the map.")?);
@@ -220,6 +226,12 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
         .trim()
         .parse()?;
 
+    let _file_count: usize = lines
+        .next()
+        .ok_or("Missing files count line")?
+        .trim()
+        .parse()?;
+
     let mut canonical_map = HashMap::new();
 
     for _ in 0..char_map_size {
@@ -233,8 +245,23 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
 
         canonical_map.insert(ch, code.to_string());
     }
-    todo!()
-    //Ok(canonical_map)
+
+    let encoded_file = read_to_string(Path::new(&config.archive_name))?;
+    let mut decoded = String::new();
+    let mut buffer = String::new();
+
+    for bit in encoded_file.chars() {
+        buffer.push(bit);
+
+        if let Some(&ch) = canonical_map.get(&buffer) {
+            decoded.push(ch);
+            buffer.clear(); // reset for next code
+        }
+    }
+    
+    fs::write(Path::new("decoded.txt"), decoded);
+
+    Ok(())
 }
 
 

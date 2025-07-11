@@ -1,2 +1,3 @@
 /target
-archive.zip
+*.zip
+*.txt

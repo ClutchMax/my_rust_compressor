@@ -16,6 +16,7 @@ pub enum EncodingMethod {
     Huffman,
 }
 
+
 pub struct Config {
     pub archive_name: String,
     pub files: Vec<String>,
@@ -26,6 +27,10 @@ pub struct Config {
 
 
 impl Config {
+    // Constructor for the "config" struct.
+    // Parses the parameters given inline. 
+    // If the action is "compress", the config struct will have an archive name and vector of files to compress and 
+    // If ... "decompress", the config will look for archive names, the "archive name" parameter won't be used. 
     pub fn build(mut args: Vec<String>) -> Result<Config, Box<dyn Error>> {
         if args.len() <= 2 {
             return Err("Not enough arguments.".into());
@@ -39,37 +44,56 @@ impl Config {
         let mut files = Vec::new();
         let encoding = EncodingMethod::Huffman;
 
+        
+        // Parses the arguments to find the action to proceed
         for param in &args {
-            if param.starts_with('-'){
-                match param {
-                    // TODO : manage if both arguments are given (rn -d wins)
-                    _ if param.contains("-d") => action = Action::Decompress,
-                    _ if param.contains("-c") => action = Action::Compress,
-                    _ => return Err("Wrong parameters were provided.".into())
-                }
+            if param == "-d" && found_action == false {
+                action = Action::Decompress;
                 found_action = true;
-            } else if param.contains(".zip") && !found_archive_name {
-                archive_name = param;
-                found_archive_name = true;
-            } else if param.contains(".zip") && found_archive_name {
-                return Err("Two archive names were given.".into());
-            } else {
-                files.push(param.clone());
+                break;
+            } else if param == "-c" && found_action == false {
+                action = Action::Compress;
+                found_action = true;
+                break;
             }
         }
+
 
         if !found_action {
             return Err("User didn't provide an action for the program.\n 
                         -c to compress, -d to decompress.".into());
         }
 
+        match action {
+            Action::Compress => {
+                for param in &args {
+                    if param.contains(".zip") && !found_archive_name {
+                        archive_name = param;
+                        found_archive_name = true;
+                    } else if param.contains(".zip") && found_archive_name { 
+                        return Err("Two archive names were given. Cannot compress an archive (yet).".into());
+                    } else if param == "-d" || param == "-c"{continue;}
+                    else {
+                        files.push(param.clone());
+                    }
+                }
+            },
+            Action::Decompress => {
+                for param in &args {
+                    if param.contains(".zip") {files.push(param.clone());}
+                }
+            }
+        }
+
         // If no archive name is provided, if trying to decompress, throws error,
         // If trying to compress, gives the default "Archive.zip" name. 
-        if !found_archive_name {
-            return Err("Error: user need to provide an archive name.".into());          
+        // if !found_archive_name {
+        //     return Err("Error: user need to provide an archive name.".into());          
+        // }
+        
+        if files.len() <= 0 {
+            return Err("User must provide files to compress or decompress.".into());
         }
-        
-        
 
         // Checks if provided fils in arguments exist
         for file in &files {

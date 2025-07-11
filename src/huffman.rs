@@ -23,15 +23,15 @@ impl Tree {
 }
 
 
-// Takes ownership of two trees and return a parent node of them, which holds ownership of the two children
+/// Takes ownership of two trees and return a parent node of them, which holds ownership of the two children
 pub fn create_node_of_2_mins (left: Tree, right: Tree) -> Tree {
     let sum_of_freq = left.extract_val() + right.extract_val();
     Tree::Branch(Box::new(left), sum_of_freq, Box::new(right))
 }
 
 
-// Builds the huffman tree by popping the two least frequent characters from the vector 'freq_vec' and adds them to the main tree by calling create_node_of_2_mins
-// Then adds the resulting node to the vector. Returns the top root which owns all the tree data
+/// Builds the huffman tree by popping the two least frequent characters from the vector 'freq_vec' and adds them to the main tree by calling create_node_of_2_mins
+/// Then adds the resulting node to the vector. Returns the top root which owns all the tree data
 pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
     let mut nodes : Vec<Tree> = freq_vec.into_iter().map(|(c, f)| Tree::Leaf(c, f)).collect(); // Creates a vector of Tree
 
@@ -47,12 +47,10 @@ pub fn create_tree (freq_vec: Vec<(char, u16)>) -> Tree {
     nodes.pop().expect("Error in building the tree")
 }
 
-
+/// Reads a string and returns a `Hashmap` with every character it contains as key and its number of occurence as value. 
 pub fn parser(content: &String) -> Result<HashMap<char, u16>, std::io::Error> {
     let mut frequency_map = HashMap::new();
    
-
-
     for c in content.chars() {
         *frequency_map.entry(c).or_insert(0) += 1;
     }
@@ -64,7 +62,7 @@ pub fn parser(content: &String) -> Result<HashMap<char, u16>, std::io::Error> {
 
 
 
-// Takes the root node of a tree and builds a hashmap giving the binary path in the tree to reach each character
+/// Takes the root node of a tree and builds a hashmap giving the binary path in the tree to reach each character
 pub fn build_code_map(tree: &Tree) -> HashMap<char, Vec<bool>> {
     let mut code_map = HashMap::new();
     build_code_map_rec(tree, Vec::new(), &mut code_map);
@@ -72,8 +70,8 @@ pub fn build_code_map(tree: &Tree) -> HashMap<char, Vec<bool>> {
 }
 
 
-// Logical function for 'build_code_map' that recursively runs the tree, writing the path to each character in a map
-// (going left = 0 = false, right = 1 = true).
+/// Logical function for 'build_code_map' that recursively runs the tree, writing the path to each character in a map
+/// (going left = 0 = false, right = 1 = true).
 fn build_code_map_rec(tree: &Tree, path: Vec<bool>, map: &mut HashMap<char, Vec<bool>>) {
     match tree {
         Tree::Leaf(ch, _) => {
@@ -92,8 +90,8 @@ fn build_code_map_rec(tree: &Tree, path: Vec<bool>, map: &mut HashMap<char, Vec<
 }
 
 
-// Takes a map containing each character as key and their binary path in the huffman tree as value, and builds
-// a canonical vector containing TODO 
+/// Takes a map containing each character as key and their binary path in the huffman tree as value, and builds
+/// a canonical vector containing the canonical version of the huffman algorithm 
 pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> HashMap<char, String>  {
     let mut canonical_vec: Vec<(char, usize)> = Vec::new();
     for (c, vec) in code_map{
@@ -137,6 +135,7 @@ pub struct EncodedFile {
 }
 
 impl EncodedFile {
+    /// Constructor for the `EncodedFile` struct. This is the function encoding the files' name and content.
     pub fn build(file: &String, map: &HashMap<char, String>) -> Result<EncodedFile, Box<dyn Error>> {
        // Keeps only the name of the file without the leading path
         let name: &str;
@@ -161,7 +160,7 @@ impl EncodedFile {
     }
 }
 
-// Function that manages the build of the canonical map by callinx auxiliary functions
+/// Builds and returns the canonical map of all the compressed files by calling auxiliary functions
 pub fn build_canonical_map_from_string(content: &String) -> Result<HashMap<char,String>, Box<dyn Error>> {
     let freq_vec: Vec<(char, u16)> = parser(&content)?
             .iter()
@@ -187,19 +186,20 @@ pub fn build_canonical_map_from_string(content: &String) -> Result<HashMap<char,
     Ok(canonical_code_map)
 }
 
-
+/// Returns a `String` with all the files names and content concatenated. It is useful to have a string containing all the characters
+/// needed to build the canonical map.
 pub fn merge_string(file_paths: &Vec<String>) -> Result<String, Box<dyn Error>> {
     let mut content = String::new();
     for file_path in file_paths {      
         // Push name first to make sure the characters in the file name also have a compression symbol
         content.push_str(file_path);                          
-        content.push_str(&fs::read_to_string(Path::new(file_path))?);                                   // Jump line to separate files
+        content.push_str(&fs::read_to_string(Path::new(file_path))?);
     }
     
     Ok(content)
 }
 
-
+/// Returns a `String` containing the size of the map, the number of files in the archive and the aforementionned map linking the compressing symbol to each character.
 pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Result<String, Box<dyn Error>> {
     let mut header = String::new();
 
@@ -215,8 +215,13 @@ pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Re
 
 
 
-// This function reads the file provided and applies all the functions needed to compress it
-// TODO : add impl of separation of files in the archive
+/// Compresses every file provided in the Config struct into a .zip, using the Huffman coding algorithm.
+/// 
+/// This function:
+/// - merges all files (including their name) to have a complete, unique character to symbol map
+/// - adds the header to the archive, containing the map size, the file count and the map
+/// - encodes each char of the file, with this format : 'file_name.ext&file_content', each file separated by a new line
+/// - writes the archive with the given name contained in the Config struct.
 pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     
     let file_paths = &config.files;
@@ -242,7 +247,15 @@ pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
 
 // --------- Decoder functions -----------
 
-pub fn extract_archive_name (file: &String) -> Result<String, Box<dyn Error>> {
+
+/// Extracts the name of the file of the provided path, without the leading path and the extension
+/// 
+/// ## Exemple :
+/// 
+/// ```rust
+/// assert_eq!("test", extract_archive_name("foo/bar/test.zip"));
+/// ```
+pub fn extract_file_from_path (file: &String) -> Result<String, Box<dyn Error>> {
     let name_without_path=
     match file.rsplit_once('/') {
         None => file,
@@ -258,18 +271,20 @@ pub fn extract_archive_name (file: &String) -> Result<String, Box<dyn Error>> {
     Ok(name_without_extension.into())
 }
 
-
+/// Reads the <char, symbol> map at the beginning of the huffman-encoded file and returns it, as well as a boolean indicating
+/// if the map contains the character '\n' (useful because causing an empty line in the file).
 pub fn read_canonical_map(encoded_text: &String, map_size: usize) -> Result<(HashMap<String,char>, bool), Box<dyn Error>> {
     let mut canonical_map = HashMap::new();
     let mut lines = encoded_text.lines();
     let mut contains_backspace = false;
     lines.next();
-    lines.next();
+    lines.next();   // Skips the two first lines of the file, which are the map size and the number of files
 
     for _i in 0..map_size {
         let line = lines.next().ok_or("Missing line in character map")?;
 
-        // If the character is ':' or '\n', special case to avoid crash
+        // Two characters can cause problems in the format: ':', which is the separator for the map in my zip format, 
+        // and '\n', which creates an empty line, so we treat those cases separately
         if line.starts_with("::") {
             let mut tmp: String = line.into();
             tmp.drain(..2);
@@ -300,25 +315,30 @@ pub fn read_canonical_map(encoded_text: &String, map_size: usize) -> Result<(Has
 
 
 // TODO : implement struct so that those functions can be methods
+/// Main decoding function which takes the Config struct and decompresses the files in it.
+/// Creates a subfolder for each archive, and puts its decompressed files in it.
+/// 
+/// For each archive, the function :
+/// - reads it and extracts its map size and file count
+/// - extracts its character map
+/// - decompresses the file name and file content, separated by a '&'
+/// - writes each decompressed file in a subfolder with the same name as the archive
 pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     let file_paths = &config.files;
 
-    // Decompress one by one each archive
+    // Decompress each archive one by one
     for file in file_paths {
 
-        let mut encoded_text = String::new();
-        encoded_text.push_str(&read_to_string(file)?);
-        
-
+        // Reads the archive
+        let encoded_text = read_to_string(file)?;
         let mut lines = encoded_text.lines();
 
-        // Read and parse map size
+        // Read and parse map size and fule count
         let char_map_size: usize = lines
             .next()
             .ok_or("Missing character map size line")?
             .trim()
             .parse()?;
-
 
         let _file_count: usize = lines
             .next()
@@ -327,25 +347,25 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
             .parse()?;
 
         
-        let (canonical_map, contains_backspace) = read_canonical_map(&encoded_text, char_map_size)?; //read_canonical_map(&config.files);
+        let (canonical_map, contains_backspace) = read_canonical_map(&encoded_text, char_map_size)?;
 
         // Skips the canonical map lines
         for _ in 0..char_map_size {
             lines.next();
         }
+
+        // Skips the extra empty line caused by the '\n' char in the map
         if contains_backspace {
             lines.next();
         }
 
         
-
-        
-        let archive_name = extract_archive_name(&file)?;
+        let archive_name = extract_file_from_path(&file)?;
         if !Path::new(&archive_name).exists() {
             fs::create_dir(&archive_name)?;
         }
         
-
+        // Each line is one file to decompress
         for line in lines {
             let mut buffer = String::new();
             let mut file_name = String::new();
@@ -353,7 +373,6 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
             
             let mut reached_separator: bool = false;
             for bit in line.chars() {
-                //println!("Inner For iteration");
                 if bit == '&' {reached_separator = true; continue;}
                 buffer.push(bit);
 
@@ -414,5 +433,17 @@ pub fn print_code_map(code_map: &HashMap<char, Vec<bool>>) {
 pub fn print_map<K: Debug, V: Debug>(map: &HashMap<K, V>) {
     for (key, value) in map {
         println!("{:?}: {:?}", key, value);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        // let result = add(2, 2);
+        // assert_eq!(result, 4);
     }
 }

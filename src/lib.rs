@@ -27,10 +27,10 @@ pub struct Config {
 
 
 impl Config {
-    // Constructor for the "config" struct.
-    // Parses the parameters given inline. 
-    // If the action is "compress", the config struct will have an archive name and vector of files to compress and 
-    // If ... "decompress", the config will look for archive names, the "archive name" parameter won't be used. 
+    /// Constructor for the "config" struct.
+    /// Parses the parameters given inline. 
+    /// If the action is "compress", the config struct will have an archive name and vector of files to compress and 
+    /// If ... "decompress", the config will look for archive names, the "archive name" parameter won't be used. 
     pub fn build(mut args: Vec<String>) -> Result<Config, Box<dyn Error>> {
         if args.len() <= 2 {
             return Err("Not enough arguments.".into());
@@ -114,7 +114,7 @@ impl Config {
 
 
 
-
+/// Main function that runs the logic of the program, according to the `Config` parameter.
 pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
     match config.action {
         Action::Compress => match config.encoding {

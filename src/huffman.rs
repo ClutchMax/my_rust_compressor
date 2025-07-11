@@ -242,6 +242,23 @@ pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
 
 // --------- Decoder functions -----------
 
+pub fn extract_archive_name (file: &String) -> Result<String, Box<dyn Error>> {
+    let name_without_path=
+    match file.rsplit_once('/') {
+        None => file,
+        Some(n) => n.1,
+    };
+
+    let name_without_extension =
+    match name_without_path.rsplit_once('.') {
+        None => name_without_path,
+        Some(n) => n.0,
+    };
+
+    Ok(name_without_extension.into())
+}
+
+
 pub fn read_canonical_map(encoded_text: &String, map_size: usize) -> Result<(HashMap<String,char>, bool), Box<dyn Error>> {
     let mut canonical_map = HashMap::new();
     let mut lines = encoded_text.lines();
@@ -323,6 +340,10 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
         
 
         
+        let archive_name = extract_archive_name(&file)?;
+        if !Path::new(&archive_name).exists() {
+            fs::create_dir(&archive_name)?;
+        }
         
 
         for line in lines {
@@ -346,8 +367,9 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
                     }
                 }
             }
+             
             
-            fs::write(Path::new(&file_name), file_content)?;
+            fs::write(Path::new(&format!("{}/{}", archive_name, file_name)), file_content)?;
             println!("Decompressed {}", &file_name);
         }
         

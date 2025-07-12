@@ -2,7 +2,7 @@ use std::error::Error;
 use std::path::Path;
 
 
-use crate::huffman::{decode_file_huffman, encode_file_huffman};
+use crate::huffman::{encode_bitvec_huffman, decode_bitvec_huffman};
 
 
 pub mod huffman; 
@@ -118,11 +118,11 @@ impl Config {
 pub fn run (config: Config) -> Result<(), Box<dyn Error>> {
     match config.action {
         Action::Compress => match config.encoding {
-            EncodingMethod::Huffman => encode_file_huffman(&config)?,
+            EncodingMethod::Huffman => encode_bitvec_huffman(&config)?,
         },
 
         Action::Decompress => match config.encoding {
-            EncodingMethod::Huffman => decode_file_huffman(&config)?,
+            EncodingMethod::Huffman => decode_bitvec_huffman(&config)?,
         },
     }
     

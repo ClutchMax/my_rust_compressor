@@ -2,7 +2,14 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::error::Error;
-use std::fs::{self, read_to_string};
+use std::fs::{self, read_to_string, OpenOptions};
+use std::io::Write;
+
+use bitvec::prelude::* ;
+
+// ---------- FLAGS --------------------
+
+static DEBUG: bool = false;
 
 
 // ---------- Tree functions -----------
@@ -127,6 +134,26 @@ pub fn build_canonical_code(code_map: HashMap<char, Vec<bool>>) -> HashMap<char,
 
 
 
+/// Converts a Huffman code map from `HashMap<char, Vec<bool>>` to `HashMap<char, BitVec>`
+pub fn convert_to_bitvec_code_map(code_map: &HashMap<char, Vec<bool>>) -> HashMap<char, BitVec> {
+    let mut bitvec_map = HashMap::new();
+
+    for (ch, bits) in code_map {
+        let bv: BitVec = bits.iter().collect();
+        bitvec_map.insert(*ch, bv);
+    }
+
+    bitvec_map
+}
+
+
+
+
+
+// #########################################
+// ------- Huffman string functions --------
+// #########################################
+
 
 // --------------- Encoding ----------------
 pub struct EncodedFile {
@@ -186,6 +213,8 @@ pub fn build_canonical_map_from_string(content: &String) -> Result<HashMap<char,
     Ok(canonical_code_map)
 }
 
+
+
 /// Returns a `String` with all the files names and content concatenated. It is useful to have a string containing all the characters
 /// needed to build the canonical map.
 pub fn merge_string(file_paths: &Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -198,6 +227,7 @@ pub fn merge_string(file_paths: &Vec<String>) -> Result<String, Box<dyn Error>> 
     
     Ok(content)
 }
+
 
 /// Returns a `String` containing the size of the map, the number of files in the archive and the aforementionned map linking the compressing symbol to each character.
 pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Result<String, Box<dyn Error>> {
@@ -215,6 +245,9 @@ pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Re
 
 
 
+
+
+
 /// Compresses every file provided in the Config struct into a .zip, using the Huffman coding algorithm.
 /// 
 /// This function:
@@ -222,7 +255,7 @@ pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Re
 /// - adds the header to the archive, containing the map size, the file count and the map
 /// - encodes each char of the file, with this format : 'file_name.ext&file_content', each file separated by a new line
 /// - writes the archive with the given name contained in the Config struct.
-pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+pub fn encode_string_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     
     let file_paths = &config.files;
 
@@ -243,6 +276,9 @@ pub fn encode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
     fs::write(Path::new(&config.archive_name), final_encoded_file)?;
     Ok(())
 }
+
+
+
 
 
 // --------- Decoder functions -----------
@@ -323,7 +359,7 @@ pub fn read_canonical_map(encoded_text: &String, map_size: usize) -> Result<(Has
 /// - extracts its character map
 /// - decompresses the file name and file content, separated by a '&'
 /// - writes each decompressed file in a subfolder with the same name as the archive
-pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+pub fn decode_string_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     let file_paths = &config.files;
 
     // Decompress each archive one by one
@@ -401,8 +437,280 @@ pub fn decode_file_huffman(config: &super::Config) -> Result<(), Box<dyn Error>>
 
 
 
-// ------- Debug functions ---------
 
+// #################################
+// ------- BitVec functions --------
+// #################################
+
+// ---------- Encoder ---------
+
+pub fn build_canonical_code_bitvec(code_map: HashMap<char, Vec<bool>>) -> HashMap<char, BitVec<u8, Msb0>>  {
+    let mut canonical_vec: Vec<(char, usize)> = code_map.iter().map(|(c, vec)| (*c, vec.len())).collect();
+
+    canonical_vec.sort_by(|a,b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
+    let mut canonical_map: HashMap<char, BitVec<u8, Msb0>> = HashMap::new();
+    let mut code: u32 = 0;
+    let mut prev_len = 0;
+
+    for &(ch, bit_len) in &canonical_vec {
+        if bit_len > prev_len {
+            code <<= bit_len - prev_len;
+        } else if bit_len < prev_len {
+            panic!("Canonical vector not sorted correctly by bit length!");
+        }
+
+        let mut bv: BitVec<u8, Msb0> = BitVec::new();
+        for i in (0..bit_len).rev() {
+            bv.push((code >> i) & 1 == 1);
+        }
+
+        canonical_map.insert(ch, bv);
+        code += 1;
+        prev_len = bit_len;
+    }
+
+    canonical_map
+}
+
+
+pub fn build_canonical_bitvec_map_from_string(content: &String) -> Result<HashMap<char, BitVec<u8, Msb0>>, Box<dyn Error>> {
+    let freq_vec: Vec<(char, u16)> = parser(&content)?
+            .iter()
+            .map(|(&c, &f)| (c, f))
+            .collect();
+
+    
+
+    if freq_vec.is_empty() {
+        return Err("encode_file: Cannot compress enmpy files.".into());
+    }
+
+    // Creates the huffman tree, then the code map and then the canonical code map
+    let tree = create_tree(freq_vec);
+    //print_tree(&tree, 0);
+
+    let code_map = build_code_map(&tree);
+    //print_code_map(&code_map);
+
+    let canonical_code_map: HashMap<char, BitVec<u8, Msb0>>= build_canonical_code_bitvec(code_map);
+    //println!("{:?}", canonical_code_map);
+
+    Ok(canonical_code_map)
+}
+
+
+
+pub fn add_huffman_bitvec_header(map: &HashMap<char, BitVec>, files_count: usize) -> Result<String, Box<dyn Error>> {
+    let mut header = String::new();
+
+    // In order: size of map, number of files
+    header.push_str(&format!("{}\n{}\n", map.len(), files_count));
+    for (char, code) in map {
+        header.push_str(&format!("{}:{}\n", char, code));
+    }
+    
+
+    Ok(header)
+} 
+
+
+
+/// Compresses files but for real this time
+pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+    let file_paths = &config.files;
+    fs::File::create(Path::new(&config.archive_name))?; // Used to create an empty archive
+    let mut write_file = OpenOptions::new().append(true).create(true).open(Path::new(&config.archive_name))?;
+
+    let mut merged_content = merge_string(file_paths)?;
+    let separator = '\u{0000}';
+    merged_content.push(separator);
+    let code_map: HashMap<char, BitVec<u8, Msb0>> = build_canonical_bitvec_map_from_string(&merged_content)?;
+    
+
+    // This part writes the header of the file containing the map and other useful variables
+    // Size of the map
+    write_file.write_all(&[code_map.len() as u8])?;
+    for (char, code) in &code_map {
+        let mut buf = [0; 4];
+        let char_bytes = char.encode_utf8(&mut buf).as_bytes();
+        
+
+        // Char 
+        write_file.write_all(char_bytes)?;
+
+        // Size of the code_byte
+        write_file.write_all(&[code.len() as u8])?;
+
+        let code_bytes = code.clone().into_vec(); 
+        write_file.write_all(&code_bytes)?;
+        
+        
+        if DEBUG {
+            println!("[DEBUG]{:?}(size {:?}):{:?}", char_bytes, &[code.len() as u8], code.clone().into_vec());
+        }
+    }
+    
+    // This part writes the name and content of the file 
+    let mut encoded: BitVec<u8, Msb0> = BitVec::new();
+    for file in file_paths {
+        let file_content = read_to_string(Path::new(file))?;
+        //adds name
+        for ch in file.chars() {
+            let code = code_map.get(&ch).ok_or(format!("Missing character in code map: {}", ch))?;
+            encoded.extend_from_bitslice(code);
+        }
+
+        // Add separator (null character)
+        
+        let code = code_map.get(&separator).ok_or("Missing separator in code map")?;
+        encoded.extend_from_bitslice(code);
+
+        //adds content
+        for ch in file_content.chars() {
+            let code = code_map.get(&ch).ok_or(format!("Missing character in code map: {}", ch))?;
+            encoded.extend_from_bitslice(code);
+        }
+    }
+
+    //fs::write(write_path, encoded.clone().into_vec())?;
+    write_file.write_all( &encoded.clone().into_vec())?;
+    Ok(())    
+}
+
+
+// ------- Decoder --------
+
+pub fn decode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
+    for archive in &config.files {
+        
+        let archive_name = extract_file_from_path(&archive)?;
+        if !Path::new(&archive_name).exists() {
+            fs::create_dir(&archive_name)?;
+        }
+
+        let bytes = fs::read(Path::new(&archive))?;
+        let mut cursor = 0;
+
+        // First byte = number of entries in the code map
+        let map_size = bytes[cursor] as usize;
+        cursor += 1;
+
+        let mut bit_map: HashMap<BitVec<u8, Msb0>, char> = HashMap::new();
+
+        for _ in 0..map_size {
+            // Step 1: Decode char (1–4 UTF-8 bytes)
+            let first_byte = bytes[cursor];
+            let char_len = match first_byte {
+                0x00..=0x7F => 1,             // ASCII
+                0xC0..=0xDF => 2,             // 2-byte UTF-8
+                0xE0..=0xEF => 3,             // 3-byte UTF-8
+                0xF0..=0xF7 => 4,             // 4-byte UTF-8
+                _ => return Err("Invalid UTF-8 character prefix in Huffman map".into()),
+            };
+
+            let ch_bytes = &bytes[cursor..cursor + char_len];
+            let ch = str::from_utf8(ch_bytes)?.chars().next().unwrap();
+            cursor += char_len;
+
+            // Step 2: Get bit length
+            let bit_len = bytes[cursor] as usize;
+            cursor += 1;
+
+            // Step 3: Get the byte slice for the code
+            let byte_len = (bit_len + 7) / 8;
+            let code_bytes = &bytes[cursor..cursor + byte_len];
+            cursor += byte_len;
+
+            let bits = BitVec::<u8, Msb0>::from_slice(code_bytes)[..bit_len].to_bitvec();
+            bit_map.insert(bits, ch);
+        }
+
+        if DEBUG {
+            println!("[DEBUG]Huffman map:");
+            for (bits, ch) in &bit_map {
+                println!("[DEBUG]  {:?} → '{}'", bits, ch);
+            }
+        }
+
+        if bit_map.len() <= 1 {
+            return Err("Decoding map is empty.".into());
+        }
+
+        let bitstream = BitVec::<u8, Msb0>::from_slice(&bytes[cursor..]);
+
+        let mut file_name = String::new();
+        let mut content = String::new();
+        let mut buffer = BitVec::<u8, Msb0>::new();
+        let separator = bitvec![u8, Msb0; 1; 8]; // Separator for file name and content
+
+        let mut reading_name = true;
+        let mut i = 0;
+
+        
+
+        for bit in bitstream {
+            i+=1;
+            buffer.push(bit);
+            println!("{}", i);
+
+            // Check if we're hitting the separator
+            if reading_name && buffer == separator {
+                buffer.clear();
+                reading_name = false;
+                continue;
+            }
+
+            // Try decoding buffer
+            for i in 1..=buffer.len() {
+                let prefix = buffer[..i].to_bitvec();
+                if let Some(&ch) = bit_map.get(&prefix) {
+                    if ch == '\u{0000}' {
+                        reading_name = false;
+                        buffer.drain(..i);
+                        continue;
+                    }
+                    if reading_name {
+                        file_name.push(ch);
+                    } else {
+                        content.push(ch);
+                    }
+                    buffer.drain(..i);
+                    break;
+                } 
+            }
+        }
+
+        if reading_name {
+            return Err("Failed to find separator — filename not decoded.".into());
+        }
+
+        
+        if file_name.is_empty() {
+            return Err("Decoded filename is empty! Can't write file.".into());
+        }
+        let filename=
+        match file_name.rsplit_once('/') {
+            None => &file_name,
+            Some(n) => n.1,
+        };
+        println!("{}/{}", archive_name, filename);
+        // Write the result to a file or print
+        fs::write(Path::new(&format!("{}/{}", archive_name, filename)), content)?;
+        println!("Decompressed {}", &filename);
+        
+    }
+
+    Ok(())
+}
+
+
+
+
+
+// #################################
+// ------- Debug functions ---------
+// #################################
 
 
 pub fn print_tree(tree: &Tree, indent: usize) {
@@ -437,13 +745,13 @@ pub fn print_map<K: Debug, V: Debug>(map: &HashMap<K, V>) {
 }
 
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+//#[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn it_works() {
-        // let result = add(2, 2);
-        // assert_eq!(result, 4);
-    }
-}
+//     #[test]
+//     fn it_works() {
+//         // let result = add(2, 2);
+//         // assert_eq!(result, 4);
+//     }
+// }

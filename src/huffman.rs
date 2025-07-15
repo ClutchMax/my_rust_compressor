@@ -248,6 +248,8 @@ pub fn add_huffman_header(map: &HashMap<char, String>, files_count: usize) -> Re
 
 
 
+/// WARNING: This function was the first draft, it uses `String` to encode the files, so it does not compress files. It is just a logical implementation.
+/// 
 /// Compresses every file provided in the Config struct into a .zip, using the Huffman coding algorithm.
 /// 
 /// This function:
@@ -350,7 +352,9 @@ pub fn read_canonical_map(encoded_text: &String, map_size: usize) -> Result<(Has
 
 
 
-// TODO : implement struct so that those functions can be methods
+
+/// WARNING: This function doesn't compress. Check `encode_file_huffman` for more info.
+/// 
 /// Main decoding function which takes the Config struct and decompresses the files in it.
 /// Creates a subfolder for each archive, and puts its decompressed files in it.
 /// 
@@ -500,7 +504,11 @@ pub fn build_canonical_bitvec_map_from_string(content: &String) -> Result<HashMa
 }
 
 
-
+/// Returns a string containing the header of the archive :
+/// 
+/// `map size` (u8)
+/// 
+/// `map` with format `char:code`
 pub fn add_huffman_bitvec_header(map: &HashMap<char, BitVec>, files_count: usize) -> Result<String, Box<dyn Error>> {
     let mut header = String::new();
 
@@ -516,7 +524,13 @@ pub fn add_huffman_bitvec_header(map: &HashMap<char, BitVec>, files_count: usize
 
 
 
-/// Compresses files but for real this time
+/// Compresses every file provided in the Config struct into a .zip, using the Huffman coding algorithm.
+/// 
+/// This function:
+/// - merges all files (including their name) to have a complete, unique character-to-symbol map
+/// - adds the header to the archive, containing the map size and the map
+/// - encodes each char of the file, with this format : 'file_name.ext\0file_content', each file separated by a null char
+/// - writes the archive with the given name contained in the Config struct.
 pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     let file_paths = &config.files;
     fs::File::create(Path::new(&config.archive_name))?; // Used to create an empty archive
@@ -529,8 +543,11 @@ pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
     
 
     // This part writes the header of the file containing the map and other useful variables
-    // Size of the map
+
+    // Writes size of the map
     write_file.write_all(&[code_map.len() as u8])?;
+
+    // Loop writing the map at the beginning of the file
     for (char, code) in &code_map {
         let mut buf = [0; 4];
         let char_bytes = char.encode_utf8(&mut buf).as_bytes();
@@ -542,6 +559,7 @@ pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
         // Size of the code_byte
         write_file.write_all(&[code.len() as u8])?;
 
+        // Code_byte
         let code_bytes = code.clone().into_vec(); 
         write_file.write_all(&code_bytes)?;
         
@@ -554,6 +572,7 @@ pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
     // This part writes the name and content of the file 
     let mut encoded: BitVec<u8, Msb0> = BitVec::new();
     for file in file_paths {
+        println!("Encoding {} in {}", file, &config.archive_name);
         let file_content = read_to_string(Path::new(file))?;
         //adds name
         for ch in file.chars() {
@@ -561,16 +580,19 @@ pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
             encoded.extend_from_bitslice(code);
         }
 
-        // Add separator (null character)
-        
-        let code = code_map.get(&separator).ok_or("Missing separator in code map")?;
-        encoded.extend_from_bitslice(code);
+        // Add separator (null character) between name and file content
+        let separator_code = code_map.get(&separator).ok_or("Missing separator in code map")?;
+        encoded.extend_from_bitslice(separator_code);
 
         //adds content
         for ch in file_content.chars() {
             let code = code_map.get(&ch).ok_or(format!("Missing character in code map: {}", ch))?;
             encoded.extend_from_bitslice(code);
         }
+
+        // Adds sepatator between file content and next file name
+        encoded.extend_from_bitslice(separator_code);
+
     }
 
     //fs::write(write_path, encoded.clone().into_vec())?;
@@ -581,6 +603,15 @@ pub fn encode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
 
 // ------- Decoder --------
 
+
+/// Main decoding function which takes the Config struct and decompresses the files in it.
+/// Creates a subfolder for each archive, and puts its decompressed files in it.
+/// 
+/// For each archive, the function :
+/// - reads it and extracts its map size
+/// - extracts its character-to-symbol map
+/// - decompresses the file name and file content, separated by a null character
+/// - writes each decompressed file in a subfolder with the same name as the archive
 pub fn decode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error>> {
     for archive in &config.files {
         
@@ -642,37 +673,40 @@ pub fn decode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
         let mut file_name = String::new();
         let mut content = String::new();
         let mut buffer = BitVec::<u8, Msb0>::new();
-        let separator = bitvec![u8, Msb0; 1; 8]; // Separator for file name and content
+        
 
         let mut reading_name = true;
-        let mut i = 0;
+        let mut file_names = Vec::new();
+        let mut file_contents = Vec::new();
 
         
 
         for bit in bitstream {
-            i+=1;
             buffer.push(bit);
-            println!("{}", i);
 
-            // Check if we're hitting the separator
-            if reading_name && buffer == separator {
-                buffer.clear();
-                reading_name = false;
-                continue;
-            }
 
             // Try decoding buffer
             for i in 1..=buffer.len() {
                 let prefix = buffer[..i].to_bitvec();
                 if let Some(&ch) = bit_map.get(&prefix) {
-                    if ch == '\u{0000}' {
-                        reading_name = false;
+                    if ch == '\u{0000}' && reading_name {
                         buffer.drain(..i);
+                        reading_name = false;
+                        continue;
+                    } 
+                    else if ch == '\u{0000}' && !reading_name {
+                        buffer.clear();
+                        reading_name = true;
+                        file_names.push(file_name.clone());
+                        file_contents.push(content.clone());
+                        file_name.clear();
+                        content.clear();
                         continue;
                     }
-                    if reading_name {
+                    else if reading_name {
                         file_name.push(ch);
-                    } else {
+                    } 
+                    else {
                         content.push(ch);
                     }
                     buffer.drain(..i);
@@ -681,23 +715,28 @@ pub fn decode_bitvec_huffman(config: &super::Config) -> Result<(), Box<dyn Error
             }
         }
 
-        if reading_name {
-            return Err("Failed to find separator — filename not decoded.".into());
+        
+
+        // Checks if there are as many file names as file contents
+        if file_names.len() != file_contents.len() {
+            return Err("Mismatch between number of file names and contents.".into());
         }
 
-        
-        if file_name.is_empty() {
-            return Err("Decoded filename is empty! Can't write file.".into());
+       
+
+        // Writes the files
+        for (file_name, content) in file_names.into_iter().zip(file_contents.into_iter()) {
+            let name: &str;
+                match file_name.rsplit_once('/')  {
+                    None => name = &file_name,
+                    Some(n) => name = n.1,
+                }
+            let full_path = format!("{}/{}", archive_name, name);
+            fs::write(&full_path, content)?;
+            println!("Decompressed {}", &name);
         }
-        let filename=
-        match file_name.rsplit_once('/') {
-            None => &file_name,
-            Some(n) => n.1,
-        };
-        println!("{}/{}", archive_name, filename);
-        // Write the result to a file or print
-        fs::write(Path::new(&format!("{}/{}", archive_name, filename)), content)?;
-        println!("Decompressed {}", &filename);
+
+    
         
     }
 
